@@ -1,11 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
-  HttpException,
   Logger,
+  Param,
   Post,
-  Query,
+  Put,
 } from '@nestjs/common';
 import * as nano from 'nano';
 import { CouchdbService } from './couchdb.service';
@@ -13,81 +14,59 @@ import { CouchdbService } from './couchdb.service';
 @Controller('couchdb')
 export class CouchdbController {
   private readonly logger = new Logger(CouchdbController.name);
+
   constructor(private readonly couchdbService: CouchdbService) {}
 
-  @Get('check-connection')
-  async checkConnection(
-    @Query('name') name: string,
+  @Post('create-db')
+  async createDb(
+    @Body() data: { name: string },
   ): Promise<nano.DatabaseCreateResponse> {
-    return this.couchdbService.createDb({ name });
-  }
-
-  @Get('use-db')
-  useDb(@Query('name') name: string): nano.DocumentScope<any> {
-    return this.couchdbService.useDb({ name });
+    return this.couchdbService.createDb(data);
   }
 
   @Post('insert-document')
-  async insertDocument(
-    @Query('dbName') dbName: string,
-    @Body() document: any,
+  async insertDocument<T extends nano.MaybeDocument>(
+    @Body() data: { dbName: string; document: T },
   ): Promise<nano.DocumentInsertResponse> {
-    const db = this.couchdbService.useDb({ name: dbName });
-    return this.couchdbService.insertDocument(db, document);
+    return this.couchdbService.insertDocument(data);
   }
 
-  @Get('get-document')
-  async getDocument(
-    @Query('dbName') dbName: string,
-    @Query('docId') docId: string,
-  ): Promise<any> {
-    const db = this.couchdbService.useDb({ name: dbName });
-    return db.get(docId);
+  @Get('document/:dbName/:docId')
+  async getDocument<T>(
+    @Param('dbName') dbName: string,
+    @Param('docId') docId: string,
+  ): Promise<T> {
+    return this.couchdbService.getDocument({ dbName, docId });
   }
 
-  @Get('get-all-documents')
-  async getAllDocuments(
-    @Query('dbName') dbName: string,
-  ): Promise<nano.DocumentListResponse<any>> {
-    const db = this.couchdbService.useDb({ name: dbName });
-    const response = await db.list();
-    return response;
+  @Get('documents/:dbName')
+  async getAllDocuments<T>(
+    @Param('dbName') dbName: string,
+  ): Promise<nano.DocumentListResponse<T>> {
+    return this.couchdbService.getAllDocuments({ dbName });
   }
 
-  @Get('delete-document')
+  @Delete('document/:dbName/:docId')
   async deleteDocument(
-    @Query('dbName') dbName: string,
-    @Query('docId') docId: string,
+    @Param('dbName') dbName: string,
+    @Param('docId') docId: string,
   ): Promise<nano.DocumentDestroyResponse> {
-    const db = this.couchdbService.useDb({ name: dbName });
-    const doc = (await db.get(docId)) as { _id: string; _rev: string };
-    if (!doc._id || !doc._rev) {
-      throw new HttpException('Document not found or missing _id/_rev', 404);
-    }
-    return db.destroy(doc._id, doc._rev);
+    return this.couchdbService.deleteDocument({ dbName, docId });
   }
 
-  @Get('update-document')
-  async updateDocument(
-    @Query('dbName') dbName: string,
-    @Body() document: { _id: string; [key: string]: any },
+  @Put('update-document/:dbName')
+  async updateDocument<T>(
+    @Param('dbName') dbName: string,
+    @Body() document: T & { _id: string },
   ): Promise<nano.DocumentInsertResponse> {
-    const db = this.couchdbService.useDb({ name: dbName });
-    const doc = (await db.get(document._id)) as {
-      _rev: string;
-      [key: string]: any;
-    };
-    document._rev = doc._rev; // Ensure we have the latest revision
-    return db.insert(document);
+    return this.couchdbService.updateDocument({ dbName, document });
   }
 
-  @Get('document')
-  async getDocumentByName(
-    @Query('dbName') dbName: string,
-    @Query('docName') docName: string,
-  ): Promise<any> {
-    this.logger.log(`Fetching document ${docName} from database ${dbName}`);
-    const db = this.couchdbService.useDb({ name: dbName });
-    return db.find({ selector: { name: docName } });
+  @Post('find-document/:dbName')
+  async findDocumentBySelector<T>(
+    @Param('dbName') dbName: string,
+    @Body() selector: Record<string, any>,
+  ): Promise<nano.MangoResponse<T>> {
+    return this.couchdbService.findDocumentBySelector({ dbName, selector });
   }
 }
